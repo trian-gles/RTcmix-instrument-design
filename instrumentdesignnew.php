@@ -12,13 +12,7 @@
 
 <h1>Creating an RTcmix Instrument</h1>
 
-<i>[NOTE:  This tutorial covers writing version 3.x RTcmix instruments.
-A number of changes have been made to instruments in v. 4.0 -- this
-tutorial will be updated soon!  In the meantime, the basic principles
-are still appropriate, but you should consult the file</i>
-<a href="README.inst_porting_v4.php">README.inst_porting_v4</a>
-<i>as well as the "sample_code" examples in the "RTcmix/docs"
-directory of the distribution.]</i>
+<i>[Updated for v. 4.5]</i>
 <p>
 
 Most RTcmix instruments are designed to
@@ -60,26 +54,22 @@ signal-processing amplitude modulation (AM) instrument.
 What we're planning to do is to create a limited version of the
 <a href="/reference/instruments/WAVETABLE.php">WAVETABLE</a>
 instrument.  WAVETABLE works by reading a waveform created by the
-<a href="/reference/scorefile/makegen.php">makegen</a>
-scorefile command.  For reasons that will become apparent as
-we elaborate the instrument, we'll assume that the function-table
-slot used for the <i>makegen</i> waveform will be slot #2.
-<i>[note: In addition to the </i>makegen<i> command documentation, click
-<a href="standalone.php#makegen">here</a>
-for a short discussion of how </i>makegen<i> can be used in a scorefile
+<a href="/reference/scorefile/maketable.php">maketable</a>
+scorefile command.
+<i>[note: In addition to the </i>maketable<i> command documentation, click
+<a href="http://rtcmix.org/tutorials/pfields.php">here</a>
+for a short discussion of how </i>maketable<i> can be used in a scorefile
 to create a waveform.]</i>
 <p>
 WAVETABLE, and hence our simple oscillator instrument, works by
-copying values from the <i>makegen</i>-created function-table slot
+copying values from the <i>maketable</i>-created table handle passed //FIX THIS
 to the output in such a manner that a repeating (oscillating!)
 waveform with a specific frequency, amplitude and duration is
 heard when the samples are converted to sound.
 <p>
 This means that we have to make some decisions about how to
-control the parameters of our simple oscillator.  Already we
-have decided that the waveform will be stored in function-table
-slot #2.  We also need to define <i>p-fields</i> (parameters)
-for the start time, the duration, the amplitude and the pitch.
+control the parameters of our simple oscillator.  We'll define <i>p-fields</i> (parameters)
+for the start time, the duration, the amplitude, the pitch, and our wavetable <i>table-handle</i>.
 We'll simply do them in that order (remember that in C++ numbering
 starts from 0):
 <ul>
@@ -91,6 +81,8 @@ starts from 0):
 	amplitude values, 0-32768)
 	<br>
 	p-field 3 (p3) == pitch (we'll use Hz (cycles/second))
+	<br>
+	p-field 4 (p4) == wavetable <i>table-handle</i>
 </ul>
 We're also going to stipulate that the instrument will write nothing
 but 2-channel (stereo) output sound, with the amplitude being
@@ -109,7 +101,7 @@ seems like an appropriate, although somewhat uninspired name.
 <h2>Setting up the Template</h2>
 
 If we had to write <u>everything</u> in an RTcmix instrument
-from scratch, it would be tedious and difficult indeed.  Fortunately
+from scratch, it would be tedious and difficult indeed.  Fortunately // REMAKE A TEMPLATE FILE
 there is a Better Way.  In the "RTcmix/docs/sample_code" directory
 (in the RTcmix distribution) as a directory titled "TEMPLATE"
 (click
@@ -157,18 +149,19 @@ an integer variable (<i>n_args</i>).  The values in these
 variables is determined by the scorefile.  If RTcmix parses the
 following line in a scorefile:
 <pre>
-       SIMPLEOSC(0, 3.5, 20000, 478.0)
+       SIMPLEOSC(0, 3.5, 20000, 478.0, wavetable)
 </pre>
 then the <i>SIMPLEOSC::init()</i> function will be called with
-<i>n_args</i> set to 4 and the <i>p[]</i> array set to these values:
+<i>n_args</i> set to 5 and the <i>p[]</i> array set to these values:
 <pre>
        p[0] = 0.0;
        p[1] = 3.5;
        p[2] = 20000.0;
        p[3] = 478.0;
+       p[4] = the <table-handle> defined with the name <i>wavetable</i>
 </pre>
 This is how data passes into instruments for particular notes from
-an RTcmix scorefile.  Note that all of the p-field parameters are
+an RTcmix scorefile.  Note that all of the numerical p-field parameters are
 converted to floating-point, even if they were entered as integers
 in the scorefile.  That's just the way it is.
 <p>
@@ -186,16 +179,7 @@ duration for the instrument/note.  This is done using the
 function.  <i>rtsetoutput()</i> takes 3 parameters, a starting
 time, a duration (both in seconds), and a pointer to the instrument
 being called (represented in C++ by the variable <i>this</i>.
-<i>rtsetoutput()</i> also returns how many sample <u>frames</u>
-we will compute.  <i>[note:  a sample <u>frame</u> corresponds to
-one 'sample' of time, irregardless of how many channels are
-in the output.  For a 1-channel output, this is just the total
-number of samples to be computed.  For a stereo output, this
-is 1/2 the total number of samples to be computed, because we need
-to compute 2 samples for each 'sample' of time.  This is not something
-you will necessarily have to worry about.]</i>  We will store the
-returned number of frames in the <i>Instrument</i> class variable
-<i>nsamps</i>.  <i>p[0]</i> is our start time and <i>p[1]</i>
+<i>p[0]</i> is our start time and <i>p[1]</i>
 is our duration, so the first addition we will make to the
 <i>SIMPLEOSC::init()</i> function will be:
 <pre>
@@ -203,7 +187,7 @@ is our duration, so the first addition we will make to the
        {
               // p0 = start, p1 = duration
 
-              nsamps = rtsetoutput(p[0], p[1], this);
+              rtsetoutput(p[0], p[1], this);
 
        ...
 </pre>
@@ -222,7 +206,7 @@ to the variable is trivial:
        {
               // p0 = start, p1 = duration, p2 = amplitude
 
-              nsamps = rtsetoutput(p[0], p[1], this);
+              rtsetoutput(p[0], p[1], this);
 
               amp = p[2];
 
@@ -243,16 +227,46 @@ the "SIMPLEOSC.h" header file:
               SIMPLEOSC();
 
        ...
-</pre>
-Notice that <i>amp</i> is declared as type "float".  Sample values
+</pre>Notice that <i>amp</i> is declared as type "float".  Sample values
 in RTcmix are indeed floating-point ("float") numbers; since <i>amp</i>
 will be used to multiply samples, then it makes sense to declare
 it as the same type.
 <p>
-All that is left for us to do in initializing our instrument
+Next, we need to take our wavetable <i>table handle</i> and store a reference
+to its underlying array.  First let's add another declaration to the "SIMPLEOSC.h"
+header file:
+<pre>
+       class SIMPLEOSC : public Instrument {
+              float amp;
+              double* wavetable;
+
+       public:
+              SIMPLEOSC();
+
+       ...
+</pre> We can obtain this underlying array by using the getPFieldTable function, 
+which takes the index of our <i>table-handle</i> in the p-field array, and a reference
+to an integer which will be used to store the length of the wavetable array.
+<pre>
+
+
+       int SIMPLEOSC::init(float p[], int n_args)
+       {
+              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency, p4 = wavetable
+
+              nsamps = rtsetoutput(p[0], p[1], this);
+
+              amp = p[2];
+
+	      int tablelen = 0;
+
+	      wavetable = (double *) getPFieldTable(4, &tablelen);
+
+      ...
+</pre>All that is left for us to do in initializing our instrument
 is to set up a wavetable oscillator to work with the proper
-frequency <i>p[3]</i>and the proper waveform (function-table
-slot #2).  In the Bad Old Days, this used to be rather annoying,
+frequency <i>p[3]</i>and the proper waveform (now stored in the variable wavetable).
+In the Bad Old Days, this used to be rather annoying,
 involving calculations of a weird thing called a sampling
 increment and strange setups of variables for the phase of
 the oscillator, etc. (you will still run into this kind of code
@@ -260,17 +274,22 @@ in many of the RTcmix instruments included in the distribution).
 RTcmix now provides a handy object,
 <a href="/reference/design/Ooscili.php">Ooscili</a>
 that makes our job much easier.  All we have to do is instantiate
-the object with the desired frequency and function-slot table #:
+the object with the sampling rate, desired frequency, wavetable 
+<i>table-handle</i>, and length of said table:
 <pre>
        int SIMPLEOSC::init(float p[], int n_args)
        {
-              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency
+              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency, p4 = wavetable
 
-              nsamps = rtsetoutput(p[0], p[1], this);
+              rtsetoutput(p[0], p[1], this);
 
               amp = p[2];
 
-              theOscil = new Ooscili(p[3], 2);
+	      int tablelen = 0;
+
+	      wavetable = (double *) getPFieldTable(4, &tablelen);
+
+              theOscil = new Ooscili(SR, p[3], wavetable, tablelen);
 
        ...
 </pre>
@@ -289,21 +308,31 @@ because it will be used in both
 
        ...
 </pre>
-All we have to do now is to return how many sample frames we need
-to compute for the note, and our definition of the <i>SIMPLEOSC::init()</i>
-is complete:
+All we have to do now is to return how many sample frames we need //EXPLAIN WHAT nSAMPS() DOES
+to compute for the note. <i>[note:  a sample <u>frame</u> corresponds to
+one 'sample' of time, irregardless of how many channels are
+in the output.  For a 1-channel output, this is just the total
+number of samples to be computed.  For a stereo output, this
+is 1/2 the total number of samples to be computed, because we need
+to compute 2 samples for each 'sample' of time.  This is not something
+you will necessarily have to worry about.]</i> Our definition of the 
+<i>SIMPLEOSC::init()</i> is now complete:
 <pre>
        int SIMPLEOSC::init(float p[], int n_args)
        {
-              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency
+              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency p4 = wavetable
 
-              nsamps = rtsetoutput(p[0], p[1], this);
+              rtsetoutput(p[0], p[1], this);
 
               amp = p[2];
 
-              theOscil = new Ooscili(p[3], 2);
+	      int tablelen = 0;
 
-              return(nsamps);
+	      wavetable = (double *) getPFieldTable(4, &tablelen);
+
+              theOscil = new Ooscili(SR, p[3], wavetable, tablelen);
+
+              return nSamps();
        }
 </pre>
 
@@ -331,16 +360,12 @@ we need to compute for our note.
 The second item is that we need to let RTcmix keep track of how
 many samples we have computed for our instrument/note.  This is
 done with the <i>increment()</i> function inside the sample-computing
-<i>for</i> loop.  We also need to tell RTcmix to "do stuff" necessary
-for sample output.  Prior to the <i>for</i> loop is the statment
-<i>Instrument::run()</i>.  This will cause RTcmix to "do" that "stuff".
+<i>for</i> loop.
 Our <i>SIMPLEOSC::run()</i> function now looks like this:
 <pre>
        int SIMPLEOSC::run()
        {
               int i;
-
-              Instrument::run();
 
               for (i = 0; i < framesToRun(); i++) {
 
@@ -371,8 +396,6 @@ Putting this all together, we have the following:
        {
               int i;
               float out[2];
-
-              Instrument::run();
 
               for (i = 0; i < framesToRun(); i++) {
                      out[0] = theOscil->next() * amp;
@@ -431,8 +454,6 @@ this:
               int i;
               float out[2];
 
-              Instrument::run();
-
               for (i = 0; i < framesToRun(); i++) {
                      out[0] = theOscil->next() * amp;
                      out[1] = out[0];
@@ -450,6 +471,7 @@ are:
 <pre>
        class SIMPLEOSC : public Instrument {
               float amp;
+              double* wavetable;
               Ooscili *theOscil;
 
        public:
@@ -503,7 +525,7 @@ Running the CMIX command with this score:
 should yield a Glorious 387.14 Hz sound with an amplitude of 20000 and
 a duration of 3.5 seconds.  Yay!
 
-<h2>Adding an Amplitude Envelope</h2>
+<h2>Adding an Amplitude Envelope</h2> //START FROM HERE NEXT
 
 As much fun as SIMPLEOSC is, the start and end of each note is a bit
 stark.  Our next step is to add an amplitude envelope, or a way of
