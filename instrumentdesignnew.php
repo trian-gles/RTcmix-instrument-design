@@ -2,12 +2,12 @@
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8">
 	<title>RTcmix - Tutorials - Creating an RTcmix Instrument</title>
-	
+
 	<link rel="stylesheet" type="text/css" href="/includes/style.css">
-	
+
 </head>
 <body>
-	
+
 <?php include($_SERVER['DOCUMENT_ROOT'].'/includes/head.inc'); ?>
 
 <h1>Creating an RTcmix Instrument</h1>
@@ -46,8 +46,7 @@ will be continuous.
 <p>
 Sounds tricky?  Actually, it's not too difficult at all.  To show
 how all this works, we'll design a simple oscillator instrument
-and then progressively add features to build a more complex
-signal-processing amplitude modulation (AM) instrument.
+and then progressively add features.
 
 <h2>A Simple Oscillator Instrument</h2>
 
@@ -57,9 +56,8 @@ instrument.  WAVETABLE works by reading a waveform created by the
 <a href="/reference/scorefile/maketable.php">maketable</a>
 scorefile command.
 <i>[note: In addition to the </i>maketable<i> command documentation, click
-<a href="http://rtcmix.org/tutorials/pfields.php">here</a>
-for a short discussion of how </i>maketable<i> can be used in a scorefile
-to create a waveform.]</i>
+<a href="/tutorials/pfields.php">here</a>
+for a short discussion of how </i>pfield-handles<i> can be used in a scorefile.]</i>
 <p>
 WAVETABLE, and hence our simple oscillator instrument, works by
 copying values from the <i>maketable</i>-created table handle passed //FIX THIS
@@ -308,15 +306,15 @@ because it will be used in both
 
        ...
 </pre>
-All we have to do now is to return how many sample frames we need //EXPLAIN WHAT nSAMPS() DOES
-to compute for the note. <i>[note:  a sample <u>frame</u> corresponds to
-one 'sample' of time, irregardless of how many channels are
-in the output.  For a 1-channel output, this is just the total
-number of samples to be computed.  For a stereo output, this
-is 1/2 the total number of samples to be computed, because we need
-to compute 2 samples for each 'sample' of time.  This is not something
-you will necessarily have to worry about.]</i> Our definition of the 
-<i>SIMPLEOSC::init()</i> is now complete:
+All we have to do now is to return how many sample frames we need
+to compute for the note using the nSamps() method. <i>[note:
+a sample <u>frame</u> corresponds to one 'sample' of time,
+irregardless of how many channels are in the output.  For a 1-channel
+output, this is just the total number of samples to be computed.
+For a stereo output, this is 1/2 the total number of samples to be
+computed, because we need to compute 2 samples for each 'sample' of time.
+This is not somethingyou will necessarily have to worry about.]</i>
+Our definition of the <i>SIMPLEOSC::init()</i> is now complete:
 <pre>
        int SIMPLEOSC::init(float p[], int n_args)
        {
@@ -509,7 +507,6 @@ We'll create a text file, "S1.sco", with the following contents:
        rtsetparams(44100, 2)
        load("./libSIMPLEOSC.so")
 
-       makegen(2, 10, 1000, 1.0, 0.3, 0.1)
        SIMPLEOSC(0, 3.5, 20000, 387.14)
 </pre>
 Notice that the <i>load</i> scorefile command is instructed to load
@@ -529,7 +526,7 @@ a duration of 3.5 seconds.  Yay!
 
 As much fun as SIMPLEOSC is, the start and end of each note is a bit
 stark.  Our next step is to add an amplitude envelope, or a way of
-fading up and down the sample amplitude as we generate each sample.
+fading up and down the sample amplitude as we generate samples.
 Here is the code in the <i>SIMPLEOSC::run()</i> member function
 that does in fact produce the samples:
 <pre>
@@ -540,100 +537,84 @@ altering <i>amp</i> to accomplish the fade-up/fade-down.
 <p>
 One approach would be to install some simple math that would accompish
 this, but there is another approach that will give us a lot more flexibility
-in designing complicated amplitude envelopes.  Recall that <i>amp</i>
-is set to be the maximum sample amplitude that we want to generate for
-each note (using the 0-32768 16-but integer scale).  If we can
-generate an additional multiplier that tracks a curve from 0 to 1, then
-we can use that to modify the overall value of <i>amp</i>.  Finding
-a way to generate a 0-1 curve of some kind will give us a very powerful tool
-to build an amplitude envelope.
+in designing complicated amplitude envelopes.
 <p>
-<a href="/reference/scorefile/makegen.php">makegen</a>
-to the rescue again!  A number of <i>makegen</i> routines are in fact
-designed to do exactly this.
-<a href="/reference/scorefile/gen24.php">gen24</a>,
-<a href="/reference/scorefile/gen18.php">gen18</a>,
-<a href="/reference/scorefile/gen4.php">gen4</a>,
-<a href="/reference/scorefile/gen5.php">gen5</a>,
-<a href="/reference/scorefile/gen6.php">gen6</a> and
-<a href="/reference/scorefile/gen7.php">gen7</a>
-can all be used to make curves between 0.0 and 1.0 of almost arbitrary
-complexity.  All we need to do is read the values from these
-<i>makegen</i>-created functions and multiply them by the <i>amp</i>
-variable.
+<a href="/tutorials/pfields.php">pfields</a> to the rescue again!
+<i>pfield-handles</i> can be point to more than just <i>maketable</i> created tables, such as
+<a href="/reference/scorefile/makeLFO.php">LFOs</a> or <a href="/reference/scorefile/makeconnection.php">outside data sources</a>.
+All we need to do is dynamically update our amp class member variable according to what this handle provides.
+We can actually remove our initialization of <i>amp</i> in our <i>SIMPLEOSC::init()</i> member function and
+deal with it later in the <i>SIMPLEOSC::amp()</i> member function for reasons that will become apparent later.
+
+<pre>
+       int SIMPLEOSC::init(float p[], int n_args)
+       {
+              // p0 = start, p1 = duration, p2 = amplitude (single value OR pfield-handle), p3 = frequency, p4 = wavetable handle
+
+              nsamps = rtsetoutput(p[0], p[1], this);
+
+              // amp = p[2]; REMOVE THIS
+
+              theOscil = new Ooscili(p[3], 2);
+
+              return(nsamps);
+       }
+</pre>
+
 <p>
-We already know how to do this -- use the <i>Ooscili</i> object.
-The trick is to set it up so that the amplitude envelope "oscillator"
-will only "oscillate" once during the note duration.  This is easy, just
-set the oscillator frequency to <i>1.0/duration</i> (wavelength [duration]
-and frequency are reciprocals).
+Note that updating our amp member variable won't be the same process as reading samples from our wavetable, which must
+be read at an ultra-fast <i>sample rate</i> to ensure that we can can get a crystal clear signal
+without any <i>aliasing</i>. For updating our amplitude, unless we want fancy AM synthesis
+we can update our amplitude at the slower <i>control rate</i> and listeners won't notice a difference,
+but our instrument will run much more efficiently. See the <a href="/reference/scorefile/reset.php">control_rate</a> documentation for more details.
+To do so, we can create a counter which decreases every <i>sample frame</>, and upon reaching 0 tells us to update our amplitude
+value.
 <p>
-So in the "SIMPLEOSC.h" header file we declare another <i>Ooscili</i>
-variable:
+So in the "SIMPLEOSC.h" header file we declare our counter variable <i>branch</i> which will track this:
 <pre>
        class SIMPLEOSC : public Instrument {
               float amp;
+	      int branch;
               Ooscili *theOscil;
-              Ooscili *theEnv;
 
        public:
               SIMPLEOSC();
 
        ...
 </pre>
-and we initialize it in the <i>SIMPLEOSC::init()</i> member function:
+We initialize it in the <i>SIMPLEOSC::init()</i> member function:
 <pre>
        int SIMPLEOSC::init(float p[], int n_args)
        {
-              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency
+              // p0 = start, p1 = duration, p2 = amplitude (single value OR pfield-handle), p3 = frequency, p4 = wavetable handle
 
               nsamps = rtsetoutput(p[0], p[1], this);
+
+              branch = 0;
 
               amp = p[2];
 
               theOscil = new Ooscili(p[3], 2);
-              theEnv = new Ooscili(1.0/p[1], 1);
 
               return(nsamps);
        }
 </pre>
-Notice that we are using function-table slot #1 for our amplitude envelope
-curve.  We originally chose function-table slot #2 as our oscillator
-waveform to allow this.  Amplitude envelopes in RTcmix are typically stored
-in function-table slot #1 (the
-<a href="/reference/scorefile/setline.php">setline</a>
-scorefile command expects this).
-<p>
-Using <i>theEnv</i> to shape our amplitude evolution is trivial:
+and finally handle the countdown in the <i>SIMPLEOSC::run()</i> member function:
 <pre>
-                     out[0] = theOscil->next() * amp * theEnv->next();
-</pre>
-So our modified SIMPLEOSC now looks like this:
-<pre>
-       int SIMPLEOSC::init(float p[], int n_args)
-       {
-              // p0 = start, p1 = duration, p2 = amplitude, p3 = frequency
-
-              nsamps = rtsetoutput(p[0], p[1], this);
-
-              amp = p[2];
-
-              theOscil = new Ooscili(p[3], 2);
-              theEnv = new Ooscili(1.0/p[1], 1);
-
-              return(nsamps);
-       }
-
-
        int SIMPLEOSC::run()
        {
               int i;
               float out[2];
 
-              Instrument::run();
-
               for (i = 0; i < framesToRun(); i++) {
-                     out[0] = theOscil->next() * amp * theEnv->next();
+                     branch--;
+
+                     if (branch <= 0)
+                     {
+                     	...
+                     }
+
+                     out[0] = theOscil->next() * amp;
                      out[1] = out[0];
 
                      rtaddout(out);
@@ -644,18 +625,17 @@ So our modified SIMPLEOSC now looks like this:
               return i;
        }
 </pre>
-The declarations in the "SIMPLEOSC.h" file are:
-<pre>
-       class SIMPLEOSC : public Instrument {
-              float amp;
-              Ooscili *theOscil;
-              Ooscili *theEnv;
+Note that by initializing our counter <i>branch</i> at 0, we ensure that our <i>amp</i>
+value will be updated on the first sample frame calculation, hence why we didn't initialize it
+in <i>SIMPLEOSC::init()</i>.
+<p> // START HERE
+Now to actually update our amplitude value.  The <i>pfield</i> system makes this extremely easy.
+We can create an array large enough to accomidate  and use <i>update()<i> function "does stuff" and fills our array <i>nvalues</i> updated pfields.
+You might be saying "well isn't that a waste to fill up all four slots of that p[] array when we only need to use one?" and
+you'd be right!  We won't deal with this issue in this tutorial but you can find out how
+to make your instrument slightly more efficient by reading the <a href="/reference/design/update.php">documentation</a>.
 
-       public:
-              SIMPLEOSC();
 
-       ...
-</pre>
 <p>
 Compiling this code will give you a versatile and powerful SIMPLEOSC,
 indeed.  How versatile and powerful?  Theoretically, armed with a sine
